@@ -2,7 +2,6 @@ import React from "react";
 import { CometChat } from "@cometchat-pro/chat";
 import MessageList from "./components/MessageList";
 import MessageInput from "./components/MessageInput";
-import { resolveSoa } from "dns";
 
 export default class App extends React.Component {
   constructor(props) {
@@ -22,15 +21,19 @@ export default class App extends React.Component {
       this.setState({
         unreadMessages: res.supergroup
       });
+    } else {
+      this.setState({
+        unreadMessages: 0
+      });
     }
     
   };
 
   connect = async username => {
-    await CometChat.init("679605312a7263");
+    await CometChat.init("67972619bf1227");
     return await CometChat.login(
       username,
-      "aa84a90eb80dae9d4008643043dad94635e3f852"
+      "8f42b4ebadde7d7a91e70269b1ae91c1a4e31022"
     );
   };
 
@@ -44,6 +47,18 @@ export default class App extends React.Component {
     message = await CometChat.sendMessage(message);
     this.setState({ messages: [...this.state.messages, message] });
   };
+
+  fetchOldShit = async () => {
+    const messageRequestor = new CometChat.MessagesRequestBuilder()
+      .setLimit(0)
+      .build();
+    const previousMessages = await messageRequestor.fetchPrevious();
+    console.log("previousMessages", previousMessages);
+    this.setState({
+      messages: previousMessages
+    })
+
+  }
 
   subscribe = () => {
     CometChat.addMessageListener(
@@ -117,6 +132,7 @@ export default class App extends React.Component {
     const username = prompt("username");
     // const username = "superhero1";
     const user = await this.connect(username);
+    await this.fetchOldShit();
     this.setState({ loading: false, user });
     this.subscribe();
     this.handleFocus();
