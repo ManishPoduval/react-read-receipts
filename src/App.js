@@ -1,23 +1,40 @@
-import React, { useEffect, useState } from "react";
+import React from "react";
 import { CometChat } from "@cometchat-pro/chat";
-import MessageList from "./components/MessageList"
-import MessageInput from "./components/MessageInput"
+import MessageList from "./components/MessageList";
+import MessageInput from "./components/MessageInput";
+import { resolveSoa } from "dns";
 
+export default class App extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = {
+      loading: true,
+      unreadMessages: 0,
+      user: {},
+      messages: []
+    };
+  }
 
-const App = () => {
-  const [messages, updateMessages] = useState([]);
-  const [loading, updateLoading] = useState(true);
-  const [user, updateUser] = useState(null);
+  updateUnreadMessages = async () => {
+    const res = await CometChat.getUnreadMessageCountForGroup("supergroup");
+    console.log('res', res)
+    if (res.supergroup > 0) {
+      this.setState({
+        unreadMessages: res.supergroup
+      });
+    }
+    
+  };
 
-  const connect = async username => {
-    await CometChat.init("6752b14a74d822");
+  connect = async username => {
+    await CometChat.init("679605312a7263");
     return await CometChat.login(
       username,
-      "331f22602b91492963c24f6c1eeefbbc8f3b7fd5"
+      "aa84a90eb80dae9d4008643043dad94635e3f852"
     );
   };
 
-  const sendMessage = async messageText => {
+  sendMessage = async messageText => {
     let message = new CometChat.TextMessage(
       "supergroup",
       messageText,
@@ -25,94 +42,107 @@ const App = () => {
       CometChat.RECEIVER_TYPE.GROUP
     );
     message = await CometChat.sendMessage(message);
-    updateMessages([...messages, message]);
+    this.setState({ messages: [...this.state.messages, message] });
   };
 
-  useEffect(() => {
-    const handleFocus = () => {
-      messages.forEach(message => {
-        if (message.sender.uid !== user.uid) {
-          CometChat.markMessageAsRead(message);
-          console.log(`marking message ${message.id} as read`)
-        }
-      });
-    };
-    window.addEventListener("focus", handleFocus);
-    return () => window.removeEventListener("focus", handleFocus);
-  }, [messages, user]);
-
-  useEffect(() => {
+  subscribe = () => {
     CometChat.addMessageListener(
       "UNIQUE_LISTENER_ID",
       new CometChat.MessageListener({
-        onTextMessageReceived: message => {
-          console.log("onTextMessageReceived", message)
-          updateMessages(messages => [...messages, message]);
+        onTextMessageReceived: async message => {
+          console.log("onTextMessageReceived", message);
+          this.setState({
+            messages: [...this.state.messages, message]
+          });
           if (document.hasFocus()) {
-            console.log(`marking message ${message.id} as read`)
+            console.log(`marking message ${message.id} as read`);
             CometChat.markMessageAsRead(message);
           }
+          await this.updateUnreadMessages()
         },
         onMessageDelivered: receipt => {
-          console.log("onMessageDelivered", receipt)
-          const updatedMessages = messages.map(message => {
+          console.log("onMessageDelivered", receipt);
+          const x = this.state.messages.map(message => {
             if (message.id === receipt.messageId) {
-              message.delivered = true;
+              return {
+                ...message,
+                delivered: true
+              };
             }
             return message;
           });
-          updateMessages(updatedMessages);
+          this.setState({ messages: x });
         },
         onMessageRead: receipt => {
-          console.log("onMessageRead", receipt)
-          const updatedMessages = messages.map(message => {
+          console.log("onMessageRead", receipt);
+          const x = this.state.messages.map(message => {
             if (message.id === receipt.messageId) {
-              message.delivered = true;
-              message.read = true;
+              return {
+                ...message,
+                read: true,
+                delivered: true
+              };
             }
             return message;
           });
-          updateMessages(updatedMessages);
+          this.setState({ messages: x });
+          this.updateUnreadMessages()
         }
       })
     );
-  }, [messages]);
+  };
 
-  useEffect(() => {
-    (async () => {
-      const username = prompt("username");
-      // const username = "superhero1";
-      const user = await connect(username);
-      updateUser(user);
+  handleFocus = () => {
+    window.addEventListener("focus", () => {
+      const updatedMessages = this.state.messages.map(message => {
+        if (
+          !message.markedAsRead &&
+          message.sender.uid !== this.state.user.uid
+        ) {
+          CometChat.markMessageAsRead(message);
+          console.log(`marking message ${message.id} as read`);
+          return {
+            ...message,
+            markedAsRead: true
+          };
+        }
+        return message;
+      });
+      this.setState({ messages: updatedMessages });
+      this.updateUnreadMessages()
+    });
+  };
 
-      const messageRequestor = new CometChat.MessagesRequestBuilder()
-        .setLimit(5)
-        .build();
-
-      const previousMessages = await messageRequestor.fetchPrevious();
-      // updateMessages(previousMessages);
-      updateLoading(false);
-    })();
-  }, []);
-
-  if (loading) {
-    return <p>Loading...</p>;
-  } else {
-    return (
-      <div style={{ padding: "10px 30px 10px 30px" }}>
-        <h1>Chat</h1>
-        <p>
-          You have successfully connected to CometChat with the username{" "}
-          <strong>
-            {user.name} ({user.uid})
-          </strong>{" "}
-          and here are your messages:
-        </p>
-        <MessageList messages={messages} />
-        <MessageInput onSubmit={sendMessage} />
-      </div>
-    );
+  async componentDidMount() {
+    const username = prompt("username");
+    // const username = "superhero1";
+    const user = await this.connect(username);
+    this.setState({ loading: false, user });
+    this.subscribe();
+    this.handleFocus();
+    await this.updateUnreadMessages();
   }
-};
 
-export default App;
+  render() {
+    if (this.state.loading) {
+      return <p>Loading...</p>;
+    } else {
+      return (
+        <div style={{ padding: "10px 30px 10px 30px" }}>
+          <h1>Chat</h1>
+          <p>
+            You have successfully connected to CometChat with the username{" "}
+            <strong>
+              {this.state.user.name} ({this.state.user.uid})
+            </strong>{" "}
+            and below are your messages. You have{" "}
+            <strong>{this.state.unreadMessages}</strong> unread messages.
+          </p>
+          <MessageList messages={this.state.messages} />
+          <MessageInput onSubmit={this.sendMessage} />
+          <button onClick={this.handleClick}>Count</button>
+        </div>
+      );
+    }
+  }
+}
